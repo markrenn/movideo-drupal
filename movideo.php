@@ -5,9 +5,9 @@
 <script type="text/javascript" src="//cdnjs.cloudflare.com/ajax/libs/json2/20121008/json2.js"></script>
 
 <style type="text/css" media="all">@import url("http://local.movideo.test:8082/modules/system/system.base.css?mpzjg8");
-@import url("http://local.movideo.test:8082/modules/system/system.menus.css?mpzjg8");
-@import url("http://local.movideo.test:8082/modules/system/system.messages.css?mpzjg8");
-@import url("http://local.movideo.test:8082/modules/system/system.theme.css?mpzjg8");</style>
+@import url("/modules/system/system.menus.css?mpzjg8");
+@import url("/modules/system/system.messages.css?mpzjg8");
+@import url("/modules/system/system.theme.css?mpzjg8");</style>
 <link rel="stylesheet" href="http://static.movideo.com/js-ui/css/movideo-ui-tree.css" type="text/css"/>
 <style type="text/css">
     #search { width:300px; height:300px; float:left; margin:20px; display:inline; }
@@ -41,12 +41,6 @@
       treemedia: handleEvent,
     });
 
-/*
-    $('#search').bind("treePlaylist",function(event,data){
-        $('#result-video-id').val(data.id);
-        //console.log(data.id);
-    });
-*/
     function handleEvent(event, data) {
         $('#player').player('play',{mediaId:data.id});
         mediaId = data.id;
