@@ -1,0 +1,654 @@
+<?php
+/**
+ * @file
+ * Movideo API Integration
+ */
+
+define('MOVIDEO_WIDGET', 'options_select');
+
+/**
+ * Implements hook_help().
+ */
+function movideo_init() {
+  drupal_add_js('http://static.movideo.com/js/movideo.min.latest.js', 'external');  //The movideo JavaScript SDK.
+  drupal_add_js(drupal_get_path('module', 'movideo') . '/js/movideo.js');
+}
+
+/**
+ * Implements hook_help().
+ */
+function movideo_help($path, $arg) {
+	switch ($path) {
+		case 'admin/help#movideo':{
+			$ret_val = '<h3>' . t('About') . '</h3>';
+			$ret_val .= '<p>' . t('Custom built integration to Drupal of the Movideo API http://code.movideo.com/') . '</p>';
+			return $ret_val;
+			break;
+		}
+	}
+}
+
+/**
+ * Implements hook_permission().
+ */
+function movideo_permission(){
+	return array(
+		'manage movideo controls' => array(
+			'title' => t('Manage Movideo Controls'),
+			'description' => t('Perform administrative tasks on Movideo integration'),
+		),
+	);
+}
+
+/**
+ * Implements hook_menu().
+ */
+function movideo_menu(){
+	$items = array();
+
+
+	// Admin configuration group.
+	$items['admin/config/movideo'] = array(
+		'title' => 'Movideo',
+		'description' => 'Administer Movideo integration',
+		'access arguments' => array('manage movideo controls'),
+	);
+
+	// Admin configuration - Settings.
+	$items['admin/config/movideo/manage'] = array(
+		'title' => 'Movideo Settings',
+		'description' => 'Manage Movideo settings and configurations',
+		'access arguments' => array('manage movideo controls'),
+		'page callback' => 'drupal_get_form',
+		'page arguments' => array('movideo_admin_settings_form'),
+	);
+
+	return $items;
+}
+
+/**
+ * Implements hook_form().
+ */
+function movideo_admin_settings_form($node, &$form_state) {
+  $form = array();
+
+  $form['overview'] = array(
+    '#markup' => t('This interface allows administrators to manage general Movideo Settings'),
+    '#prefix' => '<p>',
+    '#suffix' => '</p>',
+  );
+
+  $form['media_api'] = array(
+    '#title' => t('Media API Parameters'),
+    '#description' => t('Information to connect to the Movideo Media API.'),
+    '#type' => 'fieldset',
+    '#collapsible' => TRUE,
+    '#collapsed' => FALSE,
+  );
+
+  $form['media_api']['movideo_media_api_appkey'] = array(
+    '#title' => t('API Key'),
+    '#description' => t('The API Key used to connect to the Media API.'),
+    '#type' => 'textfield',
+    '#required' => TRUE,
+		'#default_value' => variable_get('movideo_media_api_appkey'),
+  );
+
+  $form['media_api']['movideo_media_api_flash_app_alias'] = array(
+    '#title' => t('Flash Application Alias'),
+    '#description' => t('The name of the Flash Application used to connect to the Media API.'),
+    '#type' => 'textfield',
+		'#default_value' => variable_get('movideo_media_api_flash_app_alias'),
+  );
+
+	$form['media_api']['movideo_media_api_ios_app_alias'] = array(
+    '#title' => t('iOS Application Alias'),
+    '#description' => t('The name of the iOS Application used to connect to the Media API.'),
+    '#type' => 'textfield',
+		'#default_value' => variable_get('movideo_media_api_ios_app_alias'),
+  );
+
+  return system_settings_form($form);
+
+}
+
+/**
+ * Process a validated Movideo setting submission
+ */
+function movideo_admin_settings_form_submit($form, &$form_state) {
+	// Rebuild the form.
+	$form_state['rebuild'] = TRUE;
+
+	// Save Movideo variables.
+	variable_set('movideo_media_api_appkey', $form_state['values']['movideo_media_api_appkey']);
+	variable_set('movideo_media_api_flash_app_alias', $form_state['values']['movideo_media_api_flash_app_alias']);
+	variable_set('movideo_media_api_ios_app_alias', $form_state['values']['movideo_media_api_ios_app_alias']);
+
+	// Notify user.
+	drupal_set_message(t('Movideo settings saved.'));
+}
+
+function movideo_field_info() {
+  return array(
+    // We name our field as the associative name of the array.
+    // 'movideo_rgb' => array(
+    //   'label' => t('Example Color RGB'),
+    //   'description' => t('Demonstrates a field composed of an RGB color.'),
+    //   'default_widget' => 'movideo_3text',
+    //   'default_formatter' => 'movideo_simple_text',
+    // ),
+		'movideo_media' => array(
+			'label' => t('Movideo Media'),
+			'description' => t('A field to store the Media ID of a particular video item'),
+      'default_widget' => 'movideo_media_search',
+      'default_formatter' => 'movideo_player',
+		),
+		'movideo_playlist' => array(
+			'label' => t('Movideo Playlist'),
+			'description' => t('A field to store the Playlist ID of a particular set of videos item'),
+      'default_widget' => 'number',
+      'default_formatter' => 'number_integer',
+		),
+  );
+}
+
+/**
+ * Implements hook_field_validate().
+ *
+ * This hook gives us a chance to validate content that's in our
+ * field. We're really only interested in the $items parameter, since
+ * it holds arrays representing content in the field we've defined.
+ * We want to verify that the items only contain RGB hex values like
+ * this: #RRGGBB. If the item validates, we do nothing. If it doesn't
+ * validate, we add our own error notification to the $errors parameter.
+ *
+ * @see movideo_field_widget_error()
+ */
+function movideo_field_validate($entity_type, $entity, $field, $instance, $langcode, $items, &$errors) {
+
+}
+
+
+/**
+ * Implements hook_field_is_empty().
+ *
+ * hook_field_is_emtpy() is where Drupal asks us if this field is empty.
+ * Return TRUE if it does not contain data, FALSE if it does. This lets
+ * the form API flag an error when required fields are empty.
+ */
+function movideo_field_is_empty($item, $field) {
+  return empty($item['movideo_media_id']);
+}
+
+/**
+ * Implements hook_field_formatter_info().
+ *
+ * We need to tell Drupal that we have two different types of formatters
+ * for this field. One will change the text color, and the other will
+ * change the background color.
+ *
+ * @see movideo_field_formatter_view()
+ */
+function movideo_field_formatter_info() {
+  return array(
+    // This formatter just displays the hex value in the color indicated.
+    // 'movideo_simple_text' => array(
+    //   'label' => t('Simple text-based formatter'),
+    //   'field types' => array('movideo_rgb'),
+    // ),
+    // // This formatter changes the background color of the content region.
+    // 'movideo_color_background' => array(
+    //   'label' => t('Change the background of the output text'),
+    //   'field types' => array('movideo_rgb'),
+    // ),
+    // This formatter builds movideo media player.
+    'movideo_player' => array(
+      'label' => t('Movideo Media Player'),
+      'field types' => array('movideo_media'),
+    ),
+  );
+}
+
+/**
+ * Implements hook_field_formatter_view().
+ *
+ * Two formatters are implemented.
+ * - movideo_simple_text just outputs markup indicating the color that
+ *   was entered and uses an inline style to set the text color to that value.
+ * - movideo_color_background does the same but also changes the
+ *   background color of div.region-content.
+ *
+ * @see movideo_field_formatter_info()
+ */
+function movideo_field_formatter_view($entity_type, $entity, $field, $instance, $langcode, $items, $display) {
+  $element = array();
+
+  switch ($display['type']) {
+    // This formatter simply outputs the field as text and with a color.
+    // case 'movideo_simple_text':
+    //   foreach ($items as $delta => $item) {
+    //     $element[$delta] = array(
+    //       // We create a render array to produce the desired markup,
+    //       // "<p style="color: #hexcolor">The color code ... #hexcolor</p>".
+    //       // See theme_html_tag().
+    //       '#type' => 'html_tag',
+    //       '#tag' => 'p',
+    //       '#attributes' => array(
+    //         'style' => 'color: ' . $item['movideo_media_id'],
+    //       ),
+    //       '#value' => t('The color code in this field is @code', array('@code' => $item['movideo_media_id'])),
+    //     );
+    //   }
+    //   break;
+
+    // // This formatter adds css to the page changing the '.region-content' area's
+    // // background color. If there are many fields, the last one will win.
+    // case 'movideo_color_background':
+    //   foreach ($items as $delta => $item) {
+    //     $element[$delta] = array(
+    //       '#type' => 'html_tag',
+    //       '#tag' => 'p',
+    //       '#value' => t('The content area color has been changed to @code', array('@code' => $item['movideo_media_id'])),
+    //       '#attached' => array(
+    //         'css' => array(
+    //           array(
+    //             'data' => 'div.region-content { background-color:' . $item['movideo_media_id'] . ';}',
+    //             'type' => 'inline',
+    //           ),
+    //         ),
+    //       ),
+    //     );
+    //   }
+    //   break;
+
+    // This formatter adds css to the page changing the '.region-content' area's
+    // background color. If there are many fields, the last one will win.
+    case 'movideo_player':
+      foreach ($items as $delta => $item) {
+        $element[$delta] = array(
+          '#type' => 'html_tag',
+          '#tag' => 'div',
+          '#attributes' => array(
+            'id' => 'movideo-player-' . $item['movideo_media_id'],
+						'class' => 'movideo-player',
+						'data-media-id' => $item['movideo_media_id'],
+						'data-apikey' => variable_get('movideo_media_api_appkey'),
+						'data-iosappalias' => variable_get('movideo_media_api_ios_app_alias'),
+						'data-flashappalias' => variable_get('movideo_media_api_flash_app_alias'),
+          ),
+          '#attached' => array(
+            'css' => array(
+              array(
+                'data' => '.movideo-player { width:600px; margin-left:auto; margin-right:auto; height:340px; margin-top:10px; }',
+                'type' => 'inline',
+              ),
+            ),
+          ),
+        );
+      }
+      break;
+  }
+
+  return $element;
+}
+
+/**
+ * Implements hook_field_widget_info().
+ *
+ * Three widgets are provided.
+ * - A simple text-only widget where the user enters the '#ffffff'.
+ * - A 3-textfield widget that gathers the red, green, and blue values
+ *   separately.
+ * - A farbtastic colorpicker widget that chooses the value graphically.
+ *
+ * These widget types will eventually show up in hook_field_widget_form,
+ * where we will have to flesh them out.
+ *
+ * @see movideo_field_widget_form()
+ */
+function movideo_field_widget_info() {
+  return array(
+    // 'movideo_text' => array(
+    //   'label' => t('RGB value as #ffffff'),
+    //   'field types' => array('movideo_rgb'),
+    // ),
+		'movideo_media_search' => array(
+      'label' => t('Search Movideo cloud'),
+      'field types' => array('movideo_media'),
+    ),
+    // 'movideo_3text' => array(
+    //    'label' => t('RGB text field'),
+    //    'field types' => array('movideo_rgb'),
+    // ),
+    // 'movideo_colorpicker' => array(
+    //   'label' => t('Color Picker'),
+    //   'field types' => array('movideo_rgb'),
+    // ),
+  );
+}
+
+/**
+ * Implements hook_field_widget_form().
+ *
+ * hook_widget_form() is where Drupal tells us to create form elements for
+ * our field's widget.
+ *
+ * We provide one of three different forms, depending on the widget type of
+ * the Form API item provided.
+ *
+ * The 'movideo_colorpicker' and 'movideo_text' are essentially
+ * the same, but movideo_colorpicker adds a javascript colorpicker
+ * helper.
+ *
+ * movideo_3text displays three text fields, one each for red, green,
+ * and blue. However, the field type defines a single text column,
+ * rgb, which needs an HTML color spec. Define an element validate
+ * handler that converts our r, g, and b fields into a simulated single
+ * 'rgb' form element.
+ */
+function movideo_field_widget_form(&$form, &$form_state, $field, $instance, $langcode, $items, $delta, $element) {
+  $value = isset($items[$delta]['movideo_media_id']) ? $items[$delta]['movideo_media_id'] : '';
+
+  $widget = $element;
+  $widget['#delta'] = $delta;
+
+  switch ($instance['widget']['type']) {
+
+    // case 'movideo_colorpicker':
+    //   $widget += array(
+    //     '#suffix' => '<div class="field-example-colorpicker"></div>',
+    //     '#attributes' => array('class' => array('edit-field-example-colorpicker')),
+    //     '#attached' => array(
+    //       // Add Farbtastic color picker.
+    //       'library' => array(
+    //         array('system', 'farbtastic'),
+    //       ),
+    //       // Add javascript to trigger the colorpicker.
+    //       'js' => array(drupal_get_path('module', 'movideo') . '/movideo.js'),
+    //     ),
+    //   );
+
+    case 'movideo_media_search':
+      $widget += array(
+				'#suffix' => '<a class="button movideo-browse" href="/' . drupal_get_path('module', 'movideo') . '/movideo.php?d=' . $delta . '">Browse</a> <a class="button movideo-clear">Clear</a>',
+				'#attributes' => array('class' => array('movideo_media_input'),'style' => 'float:left; margin-right:10px;'),
+        '#type' => 'textfield',
+        '#default_value' => $value,
+        '#size' => 7,
+        '#maxlength' => 7,
+      );
+      break;
+
+    // DELIBERATE fall-through: From here on the movideo_text and
+    // movideo_colorpicker are exactly the same.
+    // case 'movideo_text':
+    //   $widget += array(
+    //     '#type' => 'textfield',
+    //     '#default_value' => $value,
+    //     // Allow a slightly larger size that the field length to allow for some
+    //     // configurations where all characters won't fit in input field.
+    //     '#size' => 7,
+    //     '#maxlength' => 7,
+    //   );
+    //   break;
+
+    // case 'movideo_3text':
+    //   // Convert rgb value into r, g, and b for #default_value.
+    //   if (!empty($value)) {
+    //     preg_match_all('@..@', substr($value, 1), $match);
+    //   }
+    //   else {
+    //     $match = array(array());
+    //   }
+
+    //   // Make this a fieldset with the three text fields.
+    //   $widget += array(
+    //     '#type' => 'fieldset',
+    //     '#element_validate' => array('movideo_3text_validate'),
+
+    //     // #delta is set so that the validation function will be able
+    //     // to access external value information which otherwise would be
+    //     // unavailable.
+    //     '#delta' => $delta,
+
+    //     '#attached' => array(
+    //       'css' => array(drupal_get_path('module', 'movideo') . '/movideo.css'),
+    //     ),
+    //   );
+
+    //   // Create a textfield for saturation values for Red, Green, and Blue.
+    //   foreach (array('r' => t('Red'), 'g' => t('Green'), 'b' => t('Blue')) as $key => $title) {
+    //     $widget[$key] = array(
+    //       '#type' => 'textfield',
+    //       '#title' => $title,
+    //       '#size' => 2,
+    //       '#default_value' => array_shift($match[0]),
+    //       '#attributes' => array('class' => array('rgb-entry')),
+    //       '#description' => t('The 2-digit hexadecimal representation of @color saturation, like "a1" or "ff"', array('@color' => $title)),
+    //     );
+    //     // Since Form API doesn't allow a fieldset to be required, we
+    //     // have to require each field element individually.
+    //     if ($instance['required'] == 1) $widget[$key]['#required'] = 1;
+    //   }
+    //   break;
+
+  }
+
+  $element['movideo_media_id'] = $widget;
+	// dpm($element);
+	// dpm($delta);
+  return $element;
+}
+
+
+/**
+ * Validate the individual fields and then convert them into a single HTML RGB
+ * value as text.
+ */
+// function movideo_3text_validate($element, &$form_state) {
+//   $delta = $element['#delta']; // TODO: Isn't there a better way to find out which element?
+//   $field = $form_state['field'][$element['#field_name']][$element['#language']]['field'];
+//   $field_name = $field['field_name'];
+//   if (isset($form_state['values'][$field_name][$element['#language']][$delta]['movideo_media_id'])) {
+//     $values = $form_state['values'][$field_name][$element['#language']][$delta]['movideo_media_id'];
+//     foreach (array('r', 'g', 'b') as $colorfield) {
+//       $colorfield_value = hexdec($values[$colorfield]);
+//       // If they left any empty, we'll set the value empty and quit.
+//       if (strlen($values[$colorfield]) == 0) {
+//         form_set_value($element, '', $form_state);
+//         return;
+//       }
+//       // If they gave us anything that's not hex, reject it.
+//       if ( (strlen($values[$colorfield]) != 2) || $colorfield_value < 0 || $colorfield_value > 255) {
+//         form_error($element[$colorfield], t("Saturation value must be a 2-digit hexadecimal value between 00 and ff."));
+//       }
+//     }
+
+//     $value = sprintf('#%02s%02s%02s', $values['r'], $values['g'], $values['b']);
+//     form_set_value($element, $value, $form_state);
+//   }
+// }
+
+/**
+ * Implements hook_field_widget_error().
+ *
+ * hook_field_widget_error() lets us figure out what to do with errors
+ * we might have generated in hook_field_validate(). Generally, we'll just
+ * call form_error().
+ *
+ * @see movideo_field_validate()
+ * @see form_error()
+ */
+function movideo_field_widget_error($element, $error, $form, &$form_state) {
+  switch ($error['error']) {
+    case 'movideo_invalid':
+      form_error($element, $error['message']);
+      break;
+  }
+}
+
+
+
+/**
+ * A simple page to explain to the developer what to do.
+ */
+// function _movideo_page() {
+//   return t("The Field Example provides a field composed of an HTML RGB value, like #ff00ff. To use it, add the field to a content type.");
+// }
+/**
+ * @} End of "defgroup movideo".
+ */
+
+/**
+ * Implements hook_field_widget_info()
+ * /
+function movideo_field_widget_info(){
+	return array(
+		'movideo_browse' => array(
+		'label' => t('Movideo API Browser'),
+		'field types' => array('taxonomy_term_reference','number_integer'),
+		'settings' => array(
+			'size' => 30,
+		),
+		'behaviors' => array(
+			'multiple values' => FIELD_BEHAVIOR_DEFAULT,
+		),
+		),
+	);
+}
+
+
+
+/**
+ * Implements hook_field_info()
+ * /
+function movideo_field_info() {
+	return array(
+		'movideo_media' => array(
+			'label' => t('Movideo Media'),
+			'description' => t('A field to store the Media ID of a particular video item'),
+      'default_widget' => 'number',
+      'default_formatter' => 'number_integer',
+		),
+		'movideo_playlist' => array(
+			'label' => t('Movideo Playlist'),
+			'description' => t('A field to store the Playlist ID of a particular set of videos item'),
+      'default_widget' => 'number',
+      'default_formatter' => 'number_integer',
+		),
+
+	);
+}
+
+/**
+ * Implements hook_field_validate().
+ * /
+function movideo_field_validate($entity_type, $entity, $field, $instance, $langcode, $items, &$errors) {
+
+}
+
+/**
+ * Implements hook_field_is_empty().
+ *
+ * hook_field_is_emtpy() is where Drupal asks us if this field is empty.
+ * Return TRUE if it does not contain data, FALSE if it does. This lets
+ * the form API flag an error when required fields are empty.
+ * /
+function movideo_field_is_empty($item, $field) {
+  return empty($item['movideo_media_id']);
+}
+
+/**
+ * Implements hook_field_widget_form()
+ * /
+function movideo_field_widget_form(&$form, &$form_state, $field, $instance, $langcode, $items, $delta, $element) {
+		dpm($field);
+		dpm($form);
+		dpm($form_state);
+		dpm($instance);
+		dpm($element);
+		dpm($items);
+
+	switch ($instance['widget']['type']) {
+		case 'movideo_browse':
+		/*
+			// copy what options_select widget does to get the select values for our dropdown
+			// see options.module
+			$value_key   = key($field['columns']);
+			$multiple   = $field['cardinality'] > 1 || $field['cardinality'] == FIELD_CARDINALITY_UNLIMITED;
+			$has_value   = isset($items[0][$value_key]);
+			$properties = _options_properties('taxonomy_orderselect', $multiple, $element['#required'], $has_value);
+
+			$entity_type   = $element['#entity_type'];
+			$entity       = $element['#entity'];
+			// Prepare the list of options.
+			$options       = _options_get_options($field, $instance, $properties, $entity_type, $entity);
+			//get the default values for the field
+			$default_values = _options_storage_to_form($items, $options, $value_key, $properties);
+
+			// determine actual cardinality
+			// is cardinality set to unlimted, or is it bigger then the size of the available options?
+			if (($field['cardinality'] == FIELD_CARDINALITY_UNLIMITED) || (sizeof($options) < $field['cardinality'])){
+				// set the max to the number of options
+				$cardinality = sizeof($options);
+			}else{
+				//else use the specified cardinality
+				$cardinality = $field['cardinality'];
+			}
+
+			// is cardinality greater then the current delta?
+			if ($cardinality > $delta){
+				//is there a default value for this delta?
+				if (isset($default_values[$delta])){
+					//get default value for this instance
+					$default = array($default_values[$delta]);
+					//limit the options to only this selection
+					$options = array($default_values[$delta] => $options[$default_values[$delta]]);
+				// no default for this delta, assume it is a new instance
+				}else{
+					//value choosen in form state?
+					if (isset($form_state['values'][$field['field_name']][$langcode][$delta]) && isset($options[$form_state['values'][$field['field_name']][$langcode][$delta]['tid']])){
+						$default = array($form_state['values'][$field['field_name']][$langcode][$delta]['tid']);
+					}else{
+						$default = array();
+					}
+					// remove any previously choosen values, since can only reference a term once
+					foreach ($default_values as $tid){
+						if (isset($options[$tid])){
+							unset($options[$tid]);
+						}
+					}
+
+					//remove any selected in previous instances from form state
+					if (isset($form_state['values'][$field['field_name']])){
+						foreach ($form_state['values'][$field['field_name']][$langcode] as $d => $data){
+							if (isset($options[$data['tid']]) && !in_array($data['tid'], $default)){
+								unset($options[$data['tid']]);
+							}
+						}
+					}
+				}
+				//build widget form element
+				$widget = $element + array(
+					'#type' => 'select',
+					//add a 0 option to the options array so that values can be unselected.
+					'#options'  => array(0=>'--select--') + $options,
+					'#cardinality'  => $cardinality,
+					'#default_value' => $default,
+					'#attributes' => array('class' => array('taxonomy-order-select')),
+				);
+				//the taxonomy module will handle storing these values and is looking for a 'tid'
+				$element['tid'] = $widget;
+			}else{
+				//reached the cardinality
+				// hide the add more button
+				drupal_add_css('#edit-'.str_replace('_', '-', $field['field_name']) . '-' . $langcode . '-add-more{display:none;}', 'inline');
+				//set element to false
+				$element = false;
+			}
+			* /
+			break;
+	}
+	return $element;
+}
+*/

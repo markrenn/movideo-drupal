@@ -1,0 +1,25 @@
+<?php
+
+/**
+ * @file
+ * Install, update and uninstall functions for the number module.
+ */
+
+/**
+ * Implements hook_field_schema().
+ */
+function movideo_field_schema($field) {
+  $columns = array(
+    'movideo_media_id' => array('type' => 'int', 'length' => 10, 'not null' => FALSE),
+    //'movideo_playlist_id' => array('type' => 'int', 'length' => 10, 'not null' => FALSE),
+  );
+  $indexes = array(
+    'movideo_media_id' => array('movideo_media_id'),
+    'movideo_playlist_id' => array('movideo_playlist_id'),
+  );
+  return array(
+    'columns' => $columns,
+    'indexes' => $indexes,
+  );
+}
+ 
